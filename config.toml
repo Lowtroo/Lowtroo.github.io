@@ -1,0 +1,4 @@
+baseURL = 'https://Lowtroo.github.io/'
+languageCode = 'en-us'
+title = 'Lowtroo的垃圾桶'
+theme = "PaperMod"
