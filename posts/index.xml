@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>Posts on Lowtroo的垃圾桶</title><link>https://Lowtroo.github.io/posts/</link><description>Recent content in Posts on Lowtroo的垃圾桶</description><generator>Hugo -- gohugo.io</generator><language>en-us</language><atom:link href="https://Lowtroo.github.io/posts/index.xml" rel="self" type="application/rss+xml"/><item><title>关于Quake3中平方根倒数的计算方法</title><link>https://Lowtroo.github.io/posts/fast_sqrt/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://Lowtroo.github.io/posts/fast_sqrt/</guid><description>引 迭代算法介绍 初始的问题是：对于在区间 \(\left[ a, b \right]\) 上连续且单调的函数 \(f(x)\) ，求方程 \(f(x)=0\) 的近似解.
+算法描述： 任意取一个定义域内的值\(x_0\)，开始迭代。 假设当前的近似解为\(x_i\)，则在点\((x_i,f(x_i))\) 上作\(f(x_i)\) 的切线\(l\)，其与 \(x\) 轴的交点记为 \(x_{i+1}\) ，那么这是一个更优的近似解。 切线的代数意义即为函数 \(f(x)\) 的导数，则可以得到这样的迭代式：
+\begin{equation} x_{i+1}=x_{i}-\frac{f(x_i)}{f^{&amp;rsquo;}(x_i)} \end{equation}
+关于其收敛性的证明，请参考[[http://staff.science.uva.nl/c.dominik/]][这里]
+计算平方根 尝试求解 \(\sqrt[2]{x}\) 的值，其实等价于如下描述：
+设 \(f(x)=x^2-n\) ，求 \(f(x)=0\) 的近似解。
+按照前文的迭代式，可以得到：
+\begin{equation} x_{i+1}=x_{i}-\frac{x_{i}^{2}-n}{2x_i} \end{equation}
+设定一个合适的精度，经过有限次迭代最终能得到一个近似解
+关于Quake3 背景 在Quake3代码中，有这样一段求解平方根倒数的代码：
+float invSqrt(float x) { float xhalf = 0.5 * x; int i = *(int*)&amp;amp;x; // get bits for floating value i = 0x5f3759df - (i &amp;gt;&amp;gt; 1); // gives initial guess x = *(float*)&amp;amp;i; // convert bits back to float x = x * (1.</description></item></channel></rss>
