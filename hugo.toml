@@ -2,3 +2,6 @@ baseURL = 'https://lowtroo.github.io/'
 languageCode = 'en-us'
 title = 'Lowtroo的垃圾桶'
 theme = "PaperMod"
+[params]
+    env = "production"
+    DateFormat = "2006-01-02 15:04:05"
