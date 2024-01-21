@@ -1,7 +1,7 @@
 +++
 title = "Something related to .Net"
 draft = false
-publishDate = "2024-01-20"
+date = "2024-01-20"
 +++
 
 ## .Net Framework
