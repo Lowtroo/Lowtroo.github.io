@@ -907,7 +907,7 @@ Almost all multi-level address translation systems use paging as the lowest leve
 tree. The main differences between systems are in how they reach the page table at the
 leaf of the tree — whether using segments plus paging, or multiple levels of paging, or
 segments plus multiple levels of paging. 
-- Paged Segmentation  
+###### Paged Segmentation  
 Let us start a system with only two levels of a tree. With paged segmentation, memory is
 segmented, but instead of each segment table entry pointing directly to a contiguous
 region of physical memory, each segment table entry points to a page table, which in turn
@@ -920,11 +920,11 @@ tables for each segment are quite a bit larger in aggregate, and so they are nor
 in physical memory. To keep the memory allocator simple, the maximum segment size is
 usually chosen to allow the page table for each segment to be a small multiple of the page
 size.
-##### Multi-Level Paging
+###### Multi-Level Paging
 A nearly equivalent approach to paged segmentation is to use multiple levels of page
 tables. The top-level page table contains entries, each of which
 points to a second-level page table whose entries are pointers to page tables.
-##### Multi-Level Paged Segmentation
+###### Multi-Level Paged Segmentation
 We can combine these two approaches by using a segmented memory where each
 segment is managed by a multi-level page table.
 
