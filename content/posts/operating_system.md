@@ -1480,3 +1480,57 @@ process, not just the swapped process, will run much more slowly. By distributin
 swapped process’s pages to other processes, we can reduce the number of page faults,
 allowing system performance to recover. Eventually the other tasks will finish, and we can
 bring the swapped process back into memory.
+
+#### Zero-Copy I/O
+A common task for operating systems is to stream data between user-level programs and
+physical devices such as disks and network hardware. However, this streaming can be
+expensive in processing time if the data is copied as it moves across protection
+boundaries. A network packet needs to go from the network interface hardware, into kernel
+memory, and then to user-level; the response needs to go from user-level back into kernel
+memory and then from kernel memory to the network hardware.
+
+We could *eliminate* the *extra copy* across the kernel-user boundary by moving each of
+these applications into the kernel. However, that would be impractical as it would require
+trusting the applications with the full power of the operating system. Alternately, we could
+modify the system call interface to allow applications to *directly manipulate* data stored in a
+kernel buffer, without first copying it to user memory. However, this is not a generalpurpose
+solution; it would not work if the application needed to do any work on the buffer
+as opposed to only transferring it from one hardware device to another.
+
+Instead, two solutions to *zero-copy I/O* are used in practice. Both eliminate the copy across
+the kernel-user boundary for large blocks of data; for small chunks of data, the extra copy
+does not hurt performance.
+
+The more widely used approach *manipulates* the process page table to *simulate* a copy.
+For this to work, the application must first *align its user-level buffer to a page boundary*.
+The user-level buffer is provided to the kernel on a read or write system call, and its
+alignment and size is up to the application.
+
+The key idea is that a page-to-page copy from user to kernel space or vice versa can be
+simulated by changing page table *pointers* instead of physically copying memory.
+
+For a copy from user-space to the kernel (e.g., on a network or file system write), the
+kernel changes the permissions on the page table entry for the user-level buffer to prevent
+it from being modified. The kernel must also pin the page to prevent it from being evicted
+by the virtual memory manager. In the common case, this is enough — the page will not
+normally be modified while the I/O request is in progress. If the user program does try to
+modify the page, the program will trap to the kernel and the kernel can make an explicit
+copy at that point.
+
+In the other direction, once the data is in the kernel buffer, the operating system can
+simulate a copy up to user-space by switching the pointer in the page table, as shown in
+Figure 10.2. The process page table originally pointed to the page frame containing the
+(empty) user buffer; now it points to the page frame containing the (full) kernel buffer. To
+the user program, the data appears exactly where it was expected! The kernel can reclaim
+any physical memory behind the empty buffer.
+
+More recently, some hardware I/O devices have been designed to be able to transfer data
+to and from virtual addresses, rather than only to and from physical addresses. The kernel
+hands the virtual address of the user-level buffer to the hardware device. The hardware
+device, rather than the kernel, walks the multi-level page table to determine which physical
+page frame to use for the device transfer. When the transfer completes, the data is
+automatically where it belongs, with no extra work by the kernel. This procedure is a bit
+more complicated for incoming network packets, as the decision as to which process
+should receive which packet is determined by the contents of the packet header. The
+network interface hardware therefore has to parse the incoming packet to deliver the data
+to the appropriate process.
