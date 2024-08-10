@@ -1015,3 +1015,468 @@ second-level cache after the virtually addressed cache and TLB, but before main 
 formed from the TLB lookup, the second-level cache is consulted. If there is a match, the
 value stored at that location can be returned directly to the processor without the need to
 go to main memory.
+
+
+### Cache And Virtual Memory
+
+#### Cache Concepts
+We start by defining some terms. The simplest kind of a cache is a memory cache. It stores
+(address, value) pairs. when we need to read value of a certain
+memory location, we first *consult* the cache, and it either replies with the value (if the cache
+knows it) and otherwise it *forwards the request onward*. If the cache has the value, that is
+called a *cache hit*. If the cache does not, that is called a *cache miss*.
+
+For a memory cache to be useful, two properties need to hold. First, the cost of retrieving
+data out of the cache must be significantly less than fetching the data from memory. In
+other words, the cost of a cache hit must be less than a cache miss, or we would just skip
+using the cache.
+
+Second, the likelihood of a cache hit must be high enough to make it worth the effort. One
+source of predictability is *temporal locality*: programs tend to reference the same
+instructions and data that they had recently accessed. Examples include the instructions
+inside a loop, or a data structure that is repeatedly accessed. By caching these memory
+values, we can improve performance.
+
+Another source of predictability is *spatial locality*. Programs tend to reference data near
+other data that has been recently referenced. For example, the next instruction to execute
+is usually near to the previous one, and different fields in the same data structure tend to
+be referenced at nearly the same time. To exploit this, caches are often designed to load a
+block of data at the same time, instead of only a single location. Hardware memory caches
+often store 4-64 memory words as a unit; file caches often store data in powers of two of
+the hardware page size.
+
+A related design technique that also takes advantage of spatial locality is to *prefetch* data
+into the cache before it is needed. For example, if the file system observes the application
+reading a sequence of blocks into memory, it will read the subsequent blocks ahead of
+time, without waiting to be asked.
+
+The behavior of a cache on a write operation is shown in Figure 9.2. The operation is a bit
+more complex, but the latency of a write operation is easier to understand. Most systems
+buffer writes. As long as there is room in the buffer, the computation can continue
+immediately while the data is transferred into the cache and to memory in the background.
+(There are certain restrictions on the use of write buffers in a multiprocessor system, so for
+this chapter, we are simplifying matters to some degree.) Subsequent read requests must
+check both the write buffer and the cache — returning data from the write buffer if it is the
+latest copy.
+
+In the background, the system checks if the address is in the cache. If not, the rest of the
+cache block must be fetched from memory and then updated with the changed value.
+Finally, if the cache is *write-through*, all updates are sent immediately onward to memory. If
+the cache is *write-back*, updates can be stored in the cache, and only sent to memory when the
+cache runs out of space and needs to evict a block to make room for a new
+memory block.
+
+Since write buffers allow write requests to appear to complete immediately, the rest of our
+discussion focuses on using caches to improve memory reads.
+
+#### Memory Hierarchy
+
+From a hardware perspective, there is a fundamental tradeoff between the speed, size,
+and cost of storage. The smaller memory is, the faster it can be; the slower memory is, the
+cheaper it can be.
+
+This motivates systems to have not just one cache, but a whole hierarchy of caches, from
+the nanosecond memory possible inside a chip to the multiple exabytes of worldwide data
+center storage.
+
+If caching always worked perfectly, we could provide the illusion of instantaneous access to
+all the world’s data, with the latency (on average) of a first level cache and the size and the
+cost (on average) of disk storage.
+
+However, there are reasons to be skeptical. Even with temporal and spatial locality, there
+are thirteen orders of magnitude difference in storage capacity from the first level cache to
+the stored data of a typical data center; this is the equivalent of the smallest visible dot on
+this page versus those dots scattered across the pages of a million textbooks just like this
+one. How can a cache be effective if it can store only a tiny amount of the data that could
+be stored?
+
+The cost of a cache miss can also be high. There are eight orders of magnitude difference
+between the latency of the first-level cache and a remote data center disk; that is
+equivalent to the difference between the shortest latency a human can perceive — roughly
+one hundred milliseconds — versus one year. How can a cache be effective if the cost of a
+cache miss is enormous compared to a cache hit?
+
+#### When Caches Work and When They Do Not
+neither the cache size nor the program behavior alone governs the effectiveness of
+caching. Rather, the interaction between the two determines cache effectiveness.
+##### Working Set Model
+Most programs will have an inflection point, or knee of the curve, where a critical mass of
+program data can just barely fit in the cache. This critical mass is called the program’s
+*working set*. As long as the working set can fit in the cache, most references will be a
+cache hit, and application performance will be good.
+
+Different programs, and different users, will have working sets of different sizes. Even
+within the same program, different phases of the program may have different size working
+sets.
+
+Process context switches will also cause bursty cache misses, as the cache
+discards the working set from the old process and brings in the working set of the new
+process.
+
+Because of the increasing depth and complexity of the memory hierarchy, an important
+area of work is the design of algorithms that adapt their working set to the memory
+hierarchy. One focus has been on algorithms that manage the gap between main memory
+and disk, but the same principles apply at other levels of the memory hierarchy.
+
+A simple example is how to efficiently sort an array that does not fit in main memory.
+(Equivalently, we could consider how to sort an array that does not fit in the first level
+cache.) As shown in Figure 9.6, we can break the problem up into chunks each of which
+does fit in memory. Once we sort each chunk, we can *merge* the sorted chunks together
+efficiently. To sort a chunk that fits in main memory, we can in turn break the problem into
+sub-chunks that fit in the on-chip cache.
+
+##### Zipf Model
+Although the working set model often describes program and user behavior quite well, it is
+not always a good fit. For example, consider a web proxy cache. A web proxy cache stores
+frequently accessed web pages to speed web access and reduce network traffic. Web
+access patterns cause two challenges to a cache designer:
+- **New data.**
+- **No working set.**
+
+A useful model for understanding the cache behavior of web access is the *Zipf distribution*.
+Zipf developed the model to describe the *frequency* of individual words in a text, but it also
+applies in a number of other settings.
+
+Suppose we have a set of web pages (or words), and we rank them in order of popularity.
+Then the frequency users visit a particular web page is (approximately) inversely
+proportional to its rank。
+
+A characteristic of a Zipf curve is a *heavy-tailed distribution*. Although a significant number
+of references will be to the most popular items, a substantial portion of references will be to
+less popular ones. If we redraw Figure 9.4 of the relationship between cache hit rate and
+cache size, but for a Zipf distribution, we get Figure 9.8. Note that we have rescaled the xaxis
+to be log scale. Rather than a threshold as we see in the working set model,
+increasing the cache size continues to improve cache hit rates, but with diminishing
+returns.
+
+#### Memory Cache Lookup
+Three common mechanisms for cache lookup are:
+- **Fully associative.** With a fully associative cache, the address can be stored
+anywhere in the table, and so on a lookup, the system must check the address against
+all of the entries in the table as illustrated in Figure 9.9. There is a cache hit if any of
+the table entries match. Because any address can be stored anywhere, this provides
+the system maximal flexibility when it needs to choose an entry to discard when it runs
+out of space.  
+We saw two examples of fully associative caches in the previous chapter. Until very
+recently, TLBs were often fully associative — the TLB would check the virtual page
+against every entry in the TLB in parallel. Likewise, physical memory is a fully
+associative cache. Any page frame can hold any virtual page, and we can find where
+each virtual page is stored using a multi-level tree lookup. The set of page tables
+defines whether there is a match.  
+A problem with fully associative lookup is the cumulative impact of Moore’s Law. As
+more memory can be packed on chip, caches become larger. We can use some of the
+added memory to make each table entry larger, but this has a limit depending on the
+amount of spatial locality in typical applications. Alternately, we can add more table
+entries, but this means more lookup hardware and comparators. As an example, a 2
+MB on-chip cache with 64 byte blocks has 32K cache table entries! Checking each
+address against every table entry in parallel is not practical.  
+
+- **Direct mapped**. With a direct mapped cache, each address can only be stored in one
+location in the table. Lookup is easy: we hash the address to its entry, as shown in
+Figure 9.10. There is a cache hit if the address matches that entry and a cache miss
+otherwise.  
+A direct mapped cache allows efficient lookup, but it loses much of that advantage in
+decreased flexibility. If a program happens to need two different addresses that both
+hash to the same entry, such as the program counter and the stack pointer, the system
+will thrash. We will first get the instruction; then, oops, we need the stack. Then, oops,
+we need the instruction again. Then oops, we need the stack again. The programmer
+will see the program running slowly, with no clue why, as it will depend on which
+addresses are assigned to which instructions and data. If the programmer inserts a
+print statement to try to figure out what is going wrong, that might shift the instructions
+to a different cache block, making the problem disappear!
+- **Set associative**. A set associative cache melds the two approaches, allowing a
+tradeoff of slightly slower lookup than a direct mapped cache in exchange for most of
+the flexibility of a fully associative cache. With a set associative cache, we replicate
+the direct mapped table and lookup in each replica in parallel. A k set associative
+cache has k replicas; a particular address block can be in any of the k replicas. (This is
+equivalent to a hash table with a bucket size of k.) There is a cache hit if the address
+matches any of the replicas.  
+A set associative cache avoids the problem of *thrashing* with a direct mapped cache,
+provided the working set for a given bucket is larger than k. Almost all hardware
+caches and TLBs today use set associative matching; an 8-way set associative cache
+structure is common.  
+Direct mapped and set associative caches pose a design *challenge* for the operating
+system. These caches are much more efficient if the working set of the program is spread
+across the different buckets in the cache. This is easy with a TLB or a virtually addressed
+cache, as each successive virtual page or cache block will be assigned to a cache bucket. 
+A data structure that *straddles* a page or cache block boundary will be automatically
+assigned to two different buckets.  
+However, the assignment of physical page frames is up to the operating system, and this
+choice can have a large impact on the performance of a physically addressed cache. If 
+the hardware uses the *low order bits* of the page frame to *index* the cache, then every
+page of the current process will map to the same buckets in the cache. This makes it a lot more
+likely for the application to thrash.  
+Even worse, the application would have no way to know this had happened.  
+To make cache behavior more predictable and more effective, operating systems use a
+concept called *page coloring*. With page coloring, physical page frames are *partitioned* into
+sets based on which cache buckets they will use.
+
+
+#### Replacement Policies
+Once we have looked up an address in the cache and found a cache miss, we have a new
+problem. Which memory block do we choose to replace?  
+We first discuss several different replacement policies in the abstract, and then in the next
+two sections we consider how these concepts are applied to the setting of demand paging
+memory from disk.
+
+##### Random
+Although it may seem arbitrary, a practical replacement policy is to choose a random block
+to replace. Particularly for a first-level hardware cache, the system may not have the time
+to make a more complex decision, and the cost of making the wrong choice can be small if
+the item is in the next level cache. The bookkeeping cost for more complex policies can be
+non-trivial: keeping more information about each block requires space that may be better
+spent on increasing the cache size.
+
+Random’s biggest weakness is also its biggest strength. Whatever the access pattern is,
+Random will not be pessimal — it will not make the worst possible choice, at least, not on
+average. However, it is also unpredictable, and so it might foil an application that was
+designed to carefully manage its use of different levels of the cache.
+
+##### First-In-First-Out (FIFO)
+A less arbitrary policy is to evict the cache block or page that has been in memory the
+longest, that is, First In First Out, or FIFO. Particularly for using memory as a cache for
+disk, this can seem fair — each program’s pages spend a roughly equal amount of time in
+memory before being evicted.
+
+Unfortunately, FIFO can be the worst possible replacement policy for workloads that
+happen quite often in practice. Consider a program that cycles through a memory array
+repeatedly, but where the array is too large to fit in the cache. Many scientific applications
+do an operation on every element in an array, and then repeat that operation until the data
+reaches a fixed point. 
+
+On a repeated scan through memory, FIFO does exactly the wrong thing: it always evicts
+the block or page that will be needed next.
+
+##### Optimal Cache Replacement (MIN)
+What replacement
+policy is optimal for minimizing cache misses? The optimal policy, called MIN, is to replace
+whichever block is used farthest in the future. Equivalently, the worst possible strategy is to
+replace the block that is used soonest.
+
+As with Shortest Job First, MIN requires knowledge of the future, and so we cannot
+implement it directly. Rather, we can use it as a goal: we want to come up with
+mechanisms which are effective at predicting which blocks will be used in the near future,
+so that we can keep those in the cache.
+
+
+##### Least Recently Used (LRU)
+One way to predict the future is to look at the past. If programs exhibit *temporal locality*, the
+locations they reference in the future are likely to be the same as the ones they have
+referenced in the *recent past*.
+
+A replacement policy that captures this effect is to evict the block that has not been used
+for the longest period of time, or the *least recently used (LRU)* block. In software, LRU is
+simple to implement: on every cache hit, you move the block to the front of the list, and on
+a cache miss, you evict the block at the end of the list. In hardware, keeping a linked list of
+cached blocks is too complex to implement at high speed; instead, we need to approximate
+LRU, and we will discuss exactly how in a bit.
+
+In some cases, LRU can be optimal, as in the example in Figure 9.14. The table illustrates
+a reference pattern that exhibits *a high degree of temporal locality*; when recent references
+are more likely to be referenced in the near future, LRU can outperform FIFO.
+
+##### Least Frequently Used (LFU)
+However, when a user visits a rarely used page, LRU will treat the page as *important*, even
+though it is probably just a *one-off*. 
+
+A better strategy for references that follow a Zipf distribution is *Least Frequently Used*
+(LFU). LFU discards the block that has been used least often; it therefore keeps popular
+pages, even when less popular pages have been touched more recently.
+
+LRU and LFU both attempt to predict future behavior, and they have complementary
+strengths. Many systems meld the two approaches to gain the benefits of each. LRU is
+better at keeping the current working set in memory; once the working set is taken care of,
+however, LRU will yield diminishing returns. Instead, LFU may be better at predicting what
+files or memory blocks will be needed in the more distant future, e.g., after the next working
+set phase change.
+
+##### Belady’s Anomaly
+in some cases, adding space to a cache can actually hurt the cache hit rate. This
+is called Belady’s anomaly, after the person that discovered it.
+
+Among the policies we have
+discussed, FIFO suffers from Belady’s anomaly
+
+#### Case Study: Memory-Mapped Files
+With *demand paging*, applications can access
+more memory than is physically present on the machine, by using memory pages as a
+cache for disk blocks. When the application accesses a missing memory page, it is
+transparently brought in from disk. We start with the simpler case of a demand paging for a
+single, memory-mapped file and then extend the discussion to managing multiple
+processes competing for space in main memory.
+
+Most programs use explicit read/write system calls to
+perform file I/O. Read/write system calls allow the program to work on a copy of file data.
+The program opens a file and then invokes the system call read to copy chunks of file data
+into *buffers* in the program’s address space. The program can then use and modify those
+chunks, without affecting the underlying file. Reading and writing files via system calls 
+is simple to understand and reasonably efficient for small files.
+
+An alternative model for file I/O is to map the file contents into the program’s virtual
+address space. For a *memory-mapped file*, the operating system provides the illusion that
+the file is a program segment; like any memory segment, the program can directly issue
+instructions to load and store values to the memory. Unlike file read/write, the load and
+store instructions do not operate on a copy; they directly access and modify the contents of
+the file, treating memory as a write-back cache for disk.
+
+##### Advantages
+Memory-mapped files offer a number of advantages:
+- **Transparency**. The program can operate on the bytes in the file as if they are part of
+memory; specifically, the program can use a pointer into the file without needing to
+check if that portion of the file is in memory or not.
+- **Zero copy I/O**. The operating system does not need to copy file data from kernel
+buffers into user memory and back; rather, it just changes the program’s page table
+entry to point to the physical page frame containing that portion of the file. The kernel
+is responsible for copying data back and forth to disk. We should note that it is
+possible to implement zero copy I/O for explicit read/write file system calls in certain
+restricted cases; we will explain how in the next chapter.
+- **Pipelining**. The program can start operating on the data in the file as soon as the
+page tables have been set up; it does not need to wait for the entire file to be read into
+memory. With multiple threads, a program can use explicit read/write calls to pipeline
+disk I/O, but it needs to manage the pipeline itself.
+- **Interprocess communication**. Two or more processes can share information
+instantaneously through a memory-mapped file without needing to shuffle data back
+and forth to the kernel or to disk. If the hardware architecture supports it, the page
+table for the shared segment can also be shared.
+- **Large files**. As long as the page table for the file can fit in physical memory, the only
+limit on the size of a memory-mapped file is the size of the virtual address space. For
+example, an application may have a giant multi-level tree indexing data spread across
+a number of disks in a data center. With read/write system calls, the application needs
+to explicitly manage which parts of the tree are kept in memory and which are on disk;
+alternatively, with memory-mapped files, the application can leave that bookkeeping to
+the operating system.
+
+##### Implementation
+To implement memory-mapped files, the operating system provides a system call to map
+the file into a portion of the virtual address space. In the system call, the kernel initializes a
+set of page table entries for that region of the virtual address space, setting each entry to
+*invalid*. The kernel then returns to the user process.
+
+When the process issues an instruction that touches an invalid mapped address, a
+sequence of events occurs:
+- TLB miss
+- Page table exception
+- Convert virtual address to file offset
+- Disk block read
+- Disk interrupt
+- Page table update
+- Resume process
+- TLB miss
+- Page table fetch
+
+To make this work, we need an empty page frame to hold the incoming page from disk. To
+create an empty page frame, the operating system must:
+- Select a page to evict.
+- Find page table entries that point to the evicted page.
+- Set each page table entry to invalid.
+- Copy back any changes to the evicted page.
+
+How does the operating system know which pages have been modified?
+
+A more efficient solution is for the hardware to keep track of which pages have been
+modified. Most processor architectures reserve a bit in each page table entry to record
+whether the page has been modified. This is called a *dirty bit*. The operating system
+initializes the bit to zero, and the hardware sets the bit automatically when it executes a
+store instruction for that virtual page. Since the TLB can contain a copy of the page table
+entry, the TLB also needs a *dirty bit* per entry. The hardware can ignore the dirty bit if it is
+set in the TLB, but whenever it goes from zero to one, the hardware needs to copy the bit
+back to the corresponding page table entry.
+
+If there are multiple page table entries pointing at the same physical page frame, the page
+is dirty (and must be copied back to disk) if any of the page tables have the dirty bit set.
+Normally, of course, a memory-mapped file will have a single page table shared between
+all of the processes mapping the file.
+
+##### Approximating LRU
+A further challenge to implementing demand paged memory-mapped files is that the
+hardware does not keep track of which pages are least recently or least frequently used.
+Doing so would require the hardware to keep a linked list of every page in memory, and to
+modify that list on every load and store instruction (and for memory-mapped executable
+images, every instruction fetch as well). This would be prohibitively expensive. Instead, the
+hardware maintains a minimal amount of access information per page to allow the
+operating system to approximate LRU or LFU if it wants to do so.
+
+We should note that explicit read/write file system calls do not have this problem. Each
+time a process reads or writes a file block, the operating system can keep track of which
+blocks are used. The kernel can use this information to prioritize its cache of file blocks
+when the system needs to find space for a new block.
+
+Most processor architectures keep a *use bit* in each page table entry, next to the hardware
+dirty bit we discussed above. The operating system clears the use bit when the page table
+entry is initialized; the bit is set in hardware whenever the page table entry is brought into
+the TLB. As with the dirty bit, a physical page is used if any of the page table entries have
+their use bit set.
+
+The operating system can leverage the use bit in various ways, but a commonly used
+approach is the *clock algorithm*. Periodically, the operating
+system scans through the core map of *physical* memory pages. For each page frame, it
+records the value of the use bit in the page table entries that point to that frame, and then
+clears their use bits. Because the TLB can have a cached copy of the translation, the
+operating system also does a shootdown for any page table entry where the use bit is
+cleared. Note that if the use bit is already zero, the translation cannot be in the TLB. While
+it is scanning, the kernel can also look for dirty and recently unused pages and flush these
+out to disk.
+
+Each sweep of the clock algorithm through memory collects one bit of information about
+page usage; by adjusting the frequency of the clock algorithm, we can collect increasingly
+fine-grained information about usage, at the cost of increased software overhead. On
+modern systems with hundreds of thousands and sometimes millions of physical page
+frames, the overhead of the clock algorithm can be substantial.
+
+The policy for what to do with the usage information is up to the operating system kernel. A
+common policy is called *not recently used*, or k’th chance. If the operating system needs to
+evict a page, the kernel picks one that has not been used (has not had its use bit set) for
+the last k sweeps of the clock algorithm. The clock algorithm partitions pages based on
+how recently they have been used; among page frames in the same k’th chance partition,
+the operating system can evict pages in FIFO order.
+
+#### Case Study: Virtual Memory
+The advantage of virtual memory is flexibility. The system can continue to function even
+though the user has started more processes than can fit in main memory at the same time.
+The operating system simply makes room for the new processes by paging the memory of
+idle applications to disk. Without virtual memory, the user has to do memory management
+by hand, closing some applications to make room for others.
+
+We need to balance the allocation of
+physical page frames between processes. Unfortunately, this balancing is quite tricky. If we
+add a few extra page faults to a system, no one will notice. However, a modern disk can
+handle at most 100 page faults per second, while a modern multi-core processor can
+execute 10 billion instructions per second. Thus, if page faults are anything but extremely
+rare, performance will suffer.
+
+##### Self-Paging
+One consideration is that the behavior of one process can significantly hurt the
+performance of other programs running at the same time. For example, suppose we have
+two processes. One is a normal program, with a working set equal to say, a quarter of
+physical memory. The other program is greedy; while it can run fine with less memory, it
+will run faster if it is given more memory. We gave an example of this earlier with the sort
+program.
+
+Can you design a program to take advantage of the clock algorithm to acquire more than
+its fair share of memory pages?
+
+A widely adopted solution is *self-paging*. With self-paging, each process or user is
+assigned its fair share of page frames, using the max-min scheduling algorithm we
+described in Chapter 7. If all of the active processes can fit in memory at the same time,
+the system does not need to page. As the system starts to page, it evicts the page from
+whichever process has the most allocated to it. Thus, the pig would only be able to allocate
+its fair share of page frames, and beyond that any page faults it triggers would evict its own
+pages.
+
+Unfortunately, self-paging comes at a cost in reduced resource utilization. Suppose we
+have two processes, both of which allocate large amounts of virtual address space.
+However, the working sets of the two programs can fit in memory at the same time, for
+example, if one working set takes up 2/3rds of memory and the other takes up 1/3rd. If they
+cooperate, both can run efficiently because the system has room for both working sets.
+However, if we need to bulletproof the operating system against malicious programs by
+self-paging, then each will be assigned half of memory and the larger program will thrash.
+
+##### Swapping 
+Evicting an entire process from memory is called *swapping*. When there is too much
+paging activity, the operating system can prevent a catastrophic degradation in
+performance by moving all of the page frames of a particular process to disk, preventing it
+from running at all. Although this may seem terribly unfair, the alternative is that every
+process, not just the swapped process, will run much more slowly. By distributing the
+swapped process’s pages to other processes, we can reduce the number of page faults,
+allowing system performance to recover. Eventually the other tasks will finish, and we can
+bring the swapped process back into memory.
