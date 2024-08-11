@@ -1534,3 +1534,256 @@ more complicated for incoming network packets, as the decision as to which proce
 should receive which packet is determined by the contents of the packet header. The
 network interface hardware therefore has to parse the incoming packet to deliver the data
 to the appropriate process.
+
+## File System
+
+### Abstraction
+**File**. A file is a named collection of data in a file system.  
+Files provide a higher-level abstraction than the underlying storage device: they let a
+single, meaningful name refer to an (almost) arbitrarily-sized amount of data.
+
+A file’s information has two parts, metadata and data. A file’s *metadata* is information about
+the file that is understood and managed by the operating system.
+
+A *file’s data* can be whatever information a user or application puts in it. From the point of
+view of the file system, a file’s data is just an array of untyped bytes. Applications can use
+these bytes to store whatever information they want in whatever format they choose.
+
+**Directory**. Whereas a file contains system-defined metadata and arbitrary data, directories
+provide names for files. In particular, a file directory is a list of human-readable names and
+a mapping from each name to a specific underlying file or directory.
+
+
+### Device Access
+- **Memory-mapped I/O**. I/O devices are typically connected to an
+I/O bus that is connected to the system’s memory bus. Each I/O device has controller with
+a set of registers that can be written and read to transmit commands and data to and from
+the device. For example, a simple keyboard controller might have one register that can be
+read to learn the most recent key pressed and another register than can be written to turn
+the caps-lock light on or off.
+
+To allow I/O control registers to be read and written, systems implement memory-mapped
+I/O. Memory-mapped I/O maps each device’s control registers to a range of physical
+addresses on the memory bus. Reads and writes by the CPU to this physical address
+range do not go to main memory. Instead, they go to registers on the I/O devices’s
+controllers. Thus, the operating system’s keyboard device driver might learn the value of
+the last key pressed by reading from physical address, say, 0xC00002000.
+
+- **DMA**. Many I/O devices, including most storage devices, transfer data in bulk. For
+example, operating systems don’t read a word or two from disk, they usually do transfers of
+at least a few kilobytes at a time. Rather than requiring the CPU to read or write each word
+of a large transfer, I/O devices can use direct memory access. When using *direct memory
+access* (DMA), the I/O device copies a block of data between its own internal memory and
+the system’s main memory.  
+
+To set up a DMA transfer, a simple operating system could use memory-mapped I/O to
+provide a target physical address, transfer length, and operation code to the device. Then,
+the device copies data to or from the target address without requiring additional processor
+involvement.
+
+After setting up a DMA transfer, the operating system must not use the target physical
+pages for any other purpose until the DMA transfer is done. The operating system
+therefore “pins” the target pages in memory so that they cannot be reused until they are
+unpinned. For example, a pinned physical page cannot be swapped out to disk and then
+remapped to some other virtual address.
+
+- **A Simple Disk Request**  
+When a process issues a system call like read() to read data from disk into the process’s
+memory, the operating system moves the calling thread to a wait queue. Then, the
+operating system uses memory-mapped I/O both to tell the disk to read the requested data
+and to set up DMA so that the disk can place that data in the kernel’s memory. The disk
+then reads the data and DMAs it into main memory; once that is done, the disk triggers an
+interrupt. The operating system’s interrupt handler then copies the data from the kernel’s
+buffer into the process’s address space. Finally, the operating system moves the thread the
+ready list. When the thread next runs, it will returns from the system call with the data now
+present in the specified buffer.
+
+### Implementation
+file systems map file names
+and file offsets to specific storage blocks in two steps.
+
+First, they use *directories* to map human-readable file names to file numbers. Directories
+are often just special files that contain lists of file name →file number mappings.
+
+Second, once a file name has been translated to a file number, file systems use a
+persistently stored *index structure* to locate the blocks of the file. The index structure can
+be any persistent data structure that maps a file number and offset to a storage block.
+Often, to efficiently support a wide range of file sizes and access patterns, the index
+structure is some form of tree.
+
+#### Directories: Naming Data
+Implementing directories in a way that provides hierarchical, name-to-number mappings
+turns out to be simple: use files to store directories. So, if the system needs to determine a
+file’s number, it can just open up the appropriate directory file and scan through the file
+name/file number pairs until it finds the right one.
+
+Recursive algorithms need a base case — we cannot discover the root directories file
+number by looking in some other directory. The solution is to agree on the root directory’s
+file number ahead of time. For example, the Unix Fast File System (FFS) and many other
+Unix and Linux file systems use two as the predefined file number for the root directory of a
+file system.
+
+So, to read file /home/tom/foo.txt in Figure 13.3, we first read the root directory by reading
+the file with the well-known root number two. In that file, we search for the name home and
+find that directory /home is stored in file 88026158. By reading file 88026158 and searching
+for the name tom, we learn that directory /home/tom is stored in file 5268830.
+
+
+#### Files: Finding Data
+Once a file system has translated a file name into a file number using a directory, the file
+system must be able to find the blocks that belong to that file.
+
+Within this framework, the design space for file systems is large. To understand the tradeoffs
+and to understand the workings of common file systems, we will examine four case
+study designs that illustrate important implementation techniques and that represent
+approaches that are in wide use today.
+
+##### FAT: Linked List
+- **Index structures**. The FAT file system is named for its *file allocation table*, an array of 32-
+bit entries in a reserved area of the volume. Each file in the system corresponds to a linked
+list of FAT entries, with each FAT entry containing a pointer to the next FAT entry of the file
+(or a special “end of file” value). The FAT has one entry for each block in the volume, and
+the file’s blocks are the blocks that correspond to the file’s FAT entries: if FAT entry i is the
+jth FAT entry of a file, then storage block i is the jth data block of the file.
+- **Free space tracking**. The FAT is also used for free space tracking. If data block i is free,
+then FAT[i] contains 0. Thus, the file system can find a free block by scanning through the
+FAT to find a zeroed entry.
+- **Locality heuristics**. Different implementations of FAT may use different allocation
+strategies, but FAT implementations’ allocation strategies are usually simple.
+
+The FAT file system, however, is limited in many ways.  
+
+- Poor locality. FAT implementations typically use simple allocation strategies such as
+next fit. These can lead to badly fragmented files.
+- Poor random access. Random access within a file requires sequentially traversing
+the file’s FAT entries until the desired block is reached.
+- Limitations on volume and file size. FAT table entries are 32 bits, but the top four
+bits are reserved. Thus, a FAT volume can have at most 228 blocks.
+
+##### FFS: Fixed Tree
+The Unix Fast File System (FFS) illustrates important ideas for both indexing a file’s blocks
+so they can be located quickly and for placing data on disk to get good locality.
+
+In particular, FFS’s index structure, called a *multi-level index*, is a carefully structured tree
+that allows FFS to locate any block of a file and that is efficient for both large and small
+files.
+
+- **Index structures**. To keep track of the data blocks that belong to each file, FFS uses a
+fixed, asymmetric tree called a multi-level index, as illustrated in Figure 13.10.
+
+Each file is a tree with fixed-sized data blocks (e.g., 4 KB) as its leaves. Each file’s tree is
+rooted at an *inode* that contains the file’s metadata (e.g., the file’s owner, access control
+permissions, creation time, last modified time, and whether the file is a directory or not).
+
+A file’s inode (root) also contains array of pointers for locating the file’s data blocks
+(leaves). Some of these pointers point *directly* to the tree’s data leaves and some of them
+point to *internal nodes* in the tree. Typically, an inode contains 15 pointers. The first 12
+pointers are direct pointers that point directly to the first 12 data blocks of a file.
+
+The 13th pointer is an indirect pointer, which points to an internal node of the tree called an
+*indirect block*; an indirect block is a regular block of storage that contains an array of direct
+pointers. To read the 13th block of a file, you first read the inode to get the indirect pointer,
+then the indirect block to get the direct pointer, then the data block.
+
+The 14th pointer is a double indirect pointer, which points to an internal node of the tree
+called a *double indirect block*; a double indirect block is an array of indirect pointers, each
+of which points to an indirect block.
+
+Finally, the 15th pointer is a triple indirect pointer that points to a *triple indirect block* that
+contains an array of double indirect pointers.
+
+All of a file system’s inodes are located in an *inode array* that is stored in a fixed location
+on disk. A file’s file number, called an *inumber* in FFS, is an index into the inode array: to
+open a file (e.g., foo.txt), we look in the file’s directory to find its inumber (e.g., 91854), and
+then look in the appropriate entry of the inode array (e.g., entry 91854) to find its metadata.
+
+FFS’s multi-level index has four important characteristics:  
+1. **Tree structure**. Each file is represented as a tree, which allows the file system to
+efficiently find any block of a file.
+2. **High degree**. The FFS tree uses internal nodes with many children compared to the
+binary trees often used for in-memory data structures (i.e., internal nodes have high
+degree or fan out). For example, if a file block is 4 KB and a blockID is 4 bytes, then
+each indirect block can contain pointers to 1024 blocks.  
+High degree nodes make sense for on-disk data structures where (1) we want to
+minimize the number of seeks, (2) the cost of reading several kilobytes of sequential
+data is not much higher than the cost of reading the first byte, and (3) data must be
+read and written at least a sector at a time.  
+High degree nodes also improve efficiency for sequential reads and writes — once an
+indirect block is read, hundreds of data blocks can be read before the next indirect
+block is needed. Runs between reads of double indirect blocks are even larger.
+3. **Asymmetric**. To efficiently support both large and small files with a fixed tree
+structure, FFS’s tree structure is asymmetric. Rather than putting each data block at
+the same depth, FFS stores successive groups of blocks at increasing depth so that
+small files are stored in a small-depth tree, the bulk of medium files are stored in a
+medium-depth tree, and the bulk of large files are stored in a larger-depth tree.
+
+In contrast, if we use a fixed-depth tree and want to support reasonably large files,
+small files would pay high overheads.
+
+- **Free space management**. FFS’s free space management is simple. FFS allocates a
+bitmap with one bit per storage block. The ith bit in the bitmap indicates whether the ith
+block is free or in use. The position of FFS’s bitmap is fixed when the file system is
+formatted, so it is easy to find the part of the bitmap that identifies free blocks near any
+location of interest.
+
+- **Locality heuristics**. FFS uses two important locality heuristics to get good performance
+for many workloads: block group placement and reserved space.
+    1. **Block group placement**. FFS places data to optimize for the common case where a file’s
+    data blocks, a file’s data and metadata, and different files from the same directory are
+    accessed together.
+        - Divide disk into block groups. As Figure 13.13 illustrates, FFS divides a disk in to
+        sets of nearby tracks called block groups. The seek time between any blocks in a
+        block group will be small.
+        - Distribute metadata. Earlier multi-level index file systems put the inode array and free
+        space bitmap in a contiguous region of the disk. In such a centralized metadata
+        arrangement, the disk head must often make seeks between a file’s data and its
+        metadata.  
+        In FFS, the inode array and free space bitmap are still conceptually arrays of records,
+        and FFS still stores each array entry at a well-known, easily calculable location, but
+        the array is now split into pieces distributed across the disk. In particular, each block
+        group holds a portion of these metadata structures as Figure 13.13 illustrates.
+        - Place file in block group. FFS puts a directory and its files in the same block group:
+        when a new file is created, FFS knows the inumber of the new file’s directory, and from
+        that it can determine the range of inumbers in the same block group. FFS chooses an
+        inode from that group if one is free; otherwise, FFS gives up locality and selects an
+        inumber from a different block group.  
+        In contrast with regular files, when FFS creates a new directory, it chooses an inumber
+        from a different block group. Even though we might expect a subdirectory to have
+        some locality with its parent, putting all subdirectories in the same block group would
+        quickly fill it, thwarting our efforts to get locality within a directory.
+        - Place data blocks. Within a block group, FFS uses a first-free heuristic. When a new
+        block of a file is written, FFS writes the block to the first free block in the file’s block
+        group.  
+        Although this heuristic may give up locality in the short term, it does so to improve
+        locality in the long term. In the short term, this heuristic might spread a sequence of
+        writes into small holes near the start of a block group rather than concentrating them
+        to a sequence of contiguous free blocks somewhere else. This short term sacrifice
+        brings long term benefits, however: fragmentation is reduced, the block will tend to
+        have a long run of free space at its end, subsequent writes are more likely to be
+        sequential.  
+        The intuition is that a given block group will usually have a handful of holes scattered
+        through blocks near the start of the group and a long run of free space at the end of
+        the group. Then, if a new, small file is created, its blocks will likely go to a few of the
+        small holes, which is not ideal, but which is acceptable for a small file. Conversely, if a
+        large file is created and written from beginning to end, it will tend to have the first few
+        blocks scattered through the holes in the early part of the block, but then have the bulk
+        of its data written sequentially at the end of the block group.  
+    2. **Reserved space**. Although the block group heuristic can be effective, it relies on there
+    being a significant amount of free space on disk. In particular, when a disk is nearly full,
+    there is little opportunity for the file system to optimize locality. For example, if a disk has
+    only a few kilobytes of free sectors, most block groups will be full, and others will have only
+    a few free blocks; new writes will have to be scattered more or less randomly around the
+    disk.
+
+    FFS therefore reserves some fraction of the disk’s space (e.g., 10%) and presents a
+    slightly reduced disk size to applications. If the actual free space on the disk falls below the
+    reserve fraction, FFS treats the disk as full. For example, if a user’s application attempts to
+    write a new block in a file when all but the reserve space is consumed, that write will fail.
+    When all but the reserve space is full, the super user’s processes will still be able to
+    allocate new blocks, which is useful for allowing an administrator to log in and clean things
+    up.
+
+    The reserved space approach works well given disk technology trends. It sacrifices a small
+    amount of disk capacity, a hardware resource that has been improving rapidly over recent
+    decades, to reduce seek times, a hardware property that is improving only slowly.
+
