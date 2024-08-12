@@ -209,15 +209,12 @@ On a uniprocessor, any sequence of instructions by one thread appears atomic to 
 This implementation does provide the mutual exclusion property we need from locks. Some uniprocessor kernels use this simple approach, but it does not suffice as a general implementation for locks. If the code sequence the lock protects runs for a long time, interrupts will be disabled for that long. This will prevent other threads from running, and it will make the system unresponsive to handling user inputs or other real-time tasks. Furthermore, although this approach can work in the kernel where all code is (presumably) carefully crafted and trusted to release the lock quickly, we cannot let untrusted user-level code run with interrupts turned off since a malicious or buggy program could then monopolize the processor.
 
 - Implementing Uniprocessor Queueing Locks  
-A more general solution is based on the observation that if the lock is BUSY, there is no point in running the acquiring thread until the lock is free.  instead, we should context switch to the next ready thread.
-
+A more general solution is based on the observation that if the lock is BUSY, there is no point in running the acquiring thread until the lock is free.  instead, we should context switch to the next ready thread.  
 The implementation briefly disables interrupts to protect the lock’s data structures, but reenables them once a thread has acquired the lock or determined that the lock is BUSY. The Lock implementation shown in Figure 5.15 illustrates this approach. If a lock is BUSY when a thread tries to acquire it, the thread moves its TCB onto the lock’s waiting list. The thread then suspends itself and switches to the next runnable thread. The call to suspend does not return until the thread is put back on the ready list, e.g., until some thread calls Lock::release.
 
 - Implementing Multiprocessor Spinlocks  
-On a multiprocessor, however, disabling interrupts is insufficient. Even when interrupts are turned off on one processor, other threads are running  concurrently. Operations by a thread on one processor are interleaved with operations by other threads on other processors.
-
-Since turning off interrupts is insufficient, most processor architectures provide *atomic read-modify-write instructions* to support synchronization. These instructions can read a value from a memory location to a register, modify the value, and write the modified value to memory atomically with respect to all instructions on other processors.
-
+On a multiprocessor, however, disabling interrupts is insufficient. Even when interrupts are turned off on one processor, other threads are running  concurrently. Operations by a thread on one processor are interleaved with operations by other threads on other processors.  
+Since turning off interrupts is insufficient, most processor architectures provide *atomic read-modify-write instructions* to support synchronization. These instructions can read a value from a memory location to a register, modify the value, and write the modified value to memory atomically with respect to all instructions on other processors.  
 As an example, some architectures provide a *test-and-set* instruction, which atomically reads a value from memory to a register and writes the value 1 to that memory location.
 ```c
 class SpinLock {
@@ -234,19 +231,15 @@ class SpinLock {
             memory_barrier();
         }
 }
-```
+```  
 Figure 5.16 implements a lock using test_and_set. This lock is called a spinlock because a thread waiting for a BUSY lock “spins” (busy-waits) in a tight loop until some other lock releases the lock. This approach is inefficient if locks are held for long periods. However, for locks that are only held for short periods (i.e., less time than a context switch would take), spinlocks make sense.
 
 - Implementing Multiprocessor Queueing Locks  
-Often, we need to support critical sections of *varying length*. For example, we may want a general solution that does not make assumptions about the running time of methods that hold locks.
-
-We cannot completely eliminate *busy-waiting* on a multiprocessor, but we can *minimize* it. As we mentioned, the scheduler ready list needs a spinlock. The scheduler holds this spinlock for only a few instructions; further, if the ready list spinlock is BUSY, there is no point in trying to switch to a different thread, as that would require access to the ready list.
-
-To reduce *contention* on the ready list spinlock, we use a *separate spinlock* to guard access to each lock’s internal state. Once a thread holds the lock’s spinlock, the thread can inspect and update the lock’s state. If the lock is FREE, the thread sets the value and releases its spinlock. If the lock is BUSY, more work is needed: we need to put the current thread on the waiting list for the lock, suspend the current thread, and switch to a new thread.
-
+Often, we need to support critical sections of *varying length*. For example, we may want a general solution that does not make assumptions about the running time of methods that hold locks.  
+We cannot completely eliminate *busy-waiting* on a multiprocessor, but we can *minimize* it. As we mentioned, the scheduler ready list needs a spinlock. The scheduler holds this spinlock for only a few instructions; further, if the ready list spinlock is BUSY, there is no point in trying to switch to a different thread, as that would require access to the ready list.  
+To reduce *contention* on the ready list spinlock, we use a *separate spinlock* to guard access to each lock’s internal state. Once a thread holds the lock’s spinlock, the thread can inspect and update the lock’s state. If the lock is FREE, the thread sets the value and releases its spinlock. If the lock is BUSY, more work is needed: we need to put the current thread on the waiting list for the lock, suspend the current thread, and switch to a new thread.  
 Careful sequencing is needed, however, as shown in Figure 5.17. To suspend a thread on a multiprocessor, we need to first *disable interrupts* to ensure the thread is not preempted while holding the ready list spinlock. We then acquire the ready list spinlock, and only then is it safe to release the lock’s spinlock and switch to a new thread. The ready list spinlock is released by the next thread to run. Otherwise, a different thread on another processor
-might put the waiting thread back on the ready list (and start it running) before the waiting thread has completed its context switch.
-
+might put the waiting thread back on the ready list (and start it running) before the waiting thread has completed its context switch.  
 Later, when the lock is released, if any threads are waiting for the lock, one of them is moved off the lock’s waiting list to the scheduler’s ready list.
 
 - Implementing Condition Variables  
