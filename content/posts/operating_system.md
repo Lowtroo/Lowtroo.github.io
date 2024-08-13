@@ -556,7 +556,7 @@ processors.
     thread to a specific processor and (with the appropriate permissions) mark it to run with
     high priority. The system reserves a small subset of the processors to run other
     applications, multiplexed in the normal way but without interfering with the primary
-    application.
+    application.  
     It is usually more efficient to run two parallel programs
     each with half the number of processors, than to time slice the two programs, each *gang*
     scheduled onto all of the processors. Allocating different processors to different tasks is
