@@ -671,8 +671,7 @@ rate.
 *Little’s Law* is a theorem proved by John Little in 1961 that applies to any *stable system*
 where the arrival rate matches the departure rate. It defines a very general relationship
 between the average throughput, response time, and the number of tasks in the system:  
-`N = X R`
-
+`N = X R`  
 Although this relationship is simple and intuitive, it is powerful because the “system” can be
 anything with arriving and departing tasks, provided the system is stable — regardless of
 the arrival process, number of servers, or queueing order.
