@@ -729,7 +729,7 @@ end up with will depend on how we balance among these various goals.
 - Sparse addresses
 - Runtime lookup efficiency
 - Compact translation tables
-- Portability
+- Portability  
 We will end up with a fairly complex address translation mechanism, and so our discussion
 will start with the simplest possible mechanisms and add functionality only as needed. It
 will be helpful during the discussion for you to keep in mind the two views of memory: the
@@ -778,7 +778,7 @@ read-write access to data. Although four segments are shown in the figure, in ge
 number of segments is determined by the number of bits for the segment number that are
 set aside in the virtual address.  
 
-program memory is no longer a single contiguous region, but instead it is a set of regions.
+Program memory is no longer a single contiguous region, but instead it is a set of regions.
 Each different segment
 starts at a new segment boundary. For example, code and data are not immediately
 adjacent to each other in either the virtual or physical address space.
@@ -799,13 +799,9 @@ linked libraries.
 We can also use segments for interprocess communication, if processes are given read
 and write permission to the same segment.
 
-As a final example of the power of segments, they enable the efficient management of
-dynamically allocated memory. When an operating system reuses memory or disk space
-that had previously been used, it must first zero out the contents of the memory or disk.
-Otherwise, private data from one application could inadvertently leak into another,
-potentially malicious, application.
-
-Over time, as processes are created and finish, physical memory will
+The principal *downside* of segmentation is
+the overhead of managing a large number of variable size and dynamically growing
+memory segments. Over time, as processes are created and finish, physical memory will
 be divided into regions that are in use and regions that are not, that is, available to be
 allocated to a new process. These free regions will be of varying sizes. When we create a
 new segment, we will need to find a free spot for it. Should we put it in the smallest open
