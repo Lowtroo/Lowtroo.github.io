@@ -729,7 +729,8 @@ end up with will depend on how we balance among these various goals.
 - Sparse addresses
 - Runtime lookup efficiency
 - Compact translation tables
-- Portability  
+- Portability
+
 We will end up with a fairly complex address translation mechanism, and so our discussion
 will start with the simplest possible mechanisms and add functionality only as needed. It
 will be helpful during the discussion for you to keep in mind the two views of memory: the
